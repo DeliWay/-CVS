@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Универсальный Анализатор Данных</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root {
             --bg-primary: #0a0a0a;
@@ -271,14 +272,6 @@
             display: none;
         }
 
-        .data-info {
-            background: var(--bg-secondary);
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            border-left: 4px solid var(--success);
-        }
-
         .control-group {
             display: flex;
             flex-direction: column;
@@ -343,6 +336,9 @@
                 </button>
                 <button class="upload-btn secondary" onclick="loadSampleData('budget')">
                     💰 Пример: Бюджет
+                </button>
+                <button class="upload-btn secondary" onclick="loadSampleData('sales')">
+                    🛍️ Пример: Продажи
                 </button>
                 <button class="upload-btn warning" onclick="clearAllData()">
                     🗑️ Очистить
@@ -428,30 +424,96 @@
     </div>
 
     <script>
+        // Глобальные переменные
         let currentData = null;
         let currentChart = null;
         let currentMetadata = null;
 
-        // Drag and drop functionality
-        const uploadSection = document.getElementById('uploadSection');
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            uploadSection.addEventListener(eventName, preventDefaults, false);
+        // Sample данные для демонстрации
+        const sampleDatasets = {
+            google_finance: {
+                columns: ['Date', 'Open', 'High', 'Low', 'Close', 'Volume'],
+                data: [
+                    { Date: '2024-10-07', Open: 169.14, High: 169.90, Low: 164.13, Close: 164.39, Volume: 14034722 },
+                    { Date: '2024-10-08', Open: 165.43, High: 166.10, Low: 164.31, Close: 165.70, Volume: 11723885 },
+                    { Date: '2024-10-09', Open: 164.86, High: 166.26, Low: 161.12, Close: 163.06, Volume: 19666411 },
+                    { Date: '2024-10-10', Open: 162.11, High: 164.31, Low: 161.64, Close: 163.18, Volume: 12900492 },
+                    { Date: '2024-10-11', Open: 163.33, High: 165.27, Low: 162.50, Close: 164.52, Volume: 10945971 }
+                ],
+                metadata: {
+                    file_type: 'google_finance',
+                    description: 'Данные акций Google Finance',
+                    total_rows: 5,
+                    total_columns: 6
+                }
+            },
+            budget: {
+                columns: ['Category', 'Type', 'Amount'],
+                data: [
+                    { Category: 'Питание', Type: 'Расход', Amount: 15000 },
+                    { Category: 'Транспорт', Type: 'Расход', Amount: 5000 },
+                    { Category: 'Развлечения', Type: 'Расход', Amount: 8000 },
+                    { Category: 'Зарплата', Type: 'Доход', Amount: 100000 },
+                    { Category: 'Инвестиции', Type: 'Доход', Amount: 5000 }
+                ],
+                metadata: {
+                    file_type: 'budget',
+                    description: 'Бюджетные данные',
+                    total_rows: 5,
+                    total_columns: 3
+                }
+            },
+            sales: {
+                columns: ['Date', 'Product', 'Region', 'Sales', 'Expenses', 'Profit'],
+                data: [
+                    { Date: '2023-01-01', Product: 'Product A', Region: 'North', Sales: 15000, Expenses: 8000, Profit: 7000 },
+                    { Date: '2023-01-01', Product: 'Product B', Region: 'South', Sales: 12000, Expenses: 6500, Profit: 5500 },
+                    { Date: '2023-02-01', Product: 'Product A', Region: 'North', Sales: 18000, Expenses: 8500, Profit: 9500 },
+                    { Date: '2023-02-01', Product: 'Product B', Region: 'South', Sales: 14000, Expenses: 7000, Profit: 7000 },
+                    { Date: '2023-03-01', Product: 'Product A', Region: 'North', Sales: 22000, Expenses: 9000, Profit: 13000 }
+                ],
+                metadata: {
+                    file_type: 'sales',
+                    description: 'Данные о продажах',
+                    total_rows: 5,
+                    total_columns: 6
+                }
+            }
+        };
+
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeDragAndDrop();
+            setupEventListeners();
         });
 
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
+        // Drag and Drop функциональность
+        function initializeDragAndDrop() {
+            const uploadSection = document.getElementById('uploadSection');
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                uploadSection.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                uploadSection.addEventListener(eventName, () => {
+                    uploadSection.classList.add('drag-over');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                uploadSection.addEventListener(eventName, () => {
+                    uploadSection.classList.remove('drag-over');
+                }, false);
+            });
+
+            uploadSection.addEventListener('drop', handleDrop, false);
         }
-
-        ['dragenter', 'dragover'].forEach(eventName => {
-            uploadSection.addEventListener(eventName, () => uploadSection.classList.add('drag-over'), false);
-        });
-
-        ['dragleave', 'drop'].forEach(eventName => {
-            uploadSection.addEventListener(eventName, () => uploadSection.classList.remove('drag-over'), false);
-        });
-
-        uploadSection.addEventListener('drop', handleDrop, false);
 
         function handleDrop(e) {
             const dt = e.dataTransfer;
@@ -463,7 +525,7 @@
 
         function handleFiles(files) {
             const file = files[0];
-            if (file && file.type === 'text/csv') {
+            if (file && (file.type === 'text/csv' || file.name.endsWith('.csv'))) {
                 document.getElementById('fileInput').files = files;
                 handleFileUpload({ target: { files: files } });
             } else {
@@ -471,37 +533,42 @@
             }
         }
 
-        document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+        function setupEventListeners() {
+            document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+        }
 
+        // Основные функции
         function loadSampleData(type) {
             const loading = document.getElementById('loading');
             loading.style.display = 'block';
 
-            fetch(`/sample/${type}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        showMessage('errorMessage', '❌ ' + data.error);
-                    } else {
-                        // Симулируем загрузку sample данных
-                        currentData = {
-                            columns: data.columns,
-                            preview: data.data,
-                            statistics: {},
-                            metadata: { file_type: type, description: 'Sample Data' },
-                            shape: { rows: data.data.length, cols: data.columns.length },
-                            data_type: type
-                        };
-                        displayDataOverview(currentData);
-                        showMessage('successMessage', '✅ Sample данные загружены!');
-                    }
-                })
-                .catch(error => {
-                    showMessage('errorMessage', '❌ Ошибка загрузки sample: ' + error.message);
-                })
-                .finally(() => {
-                    loading.style.display = 'none';
-                });
+            // Имитируем загрузку для лучшего UX
+            setTimeout(() => {
+                if (sampleDatasets[type]) {
+                    const sample = sampleDatasets[type];
+
+                    // Вычисляем статистику для sample данных
+                    const statistics = calculateStatistics(sample.data);
+
+                    currentData = {
+                        columns: sample.columns,
+                        preview: sample.data,
+                        statistics: statistics,
+                        metadata: sample.metadata,
+                        shape: {
+                            rows: sample.data.length,
+                            cols: sample.columns.length
+                        },
+                        data_type: type
+                    };
+
+                    displayDataOverview(currentData);
+                    showMessage('successMessage', '✅ Sample данные загружены!');
+                } else {
+                    showMessage('errorMessage', '❌ Неизвестный тип sample данных');
+                }
+                loading.style.display = 'none';
+            }, 1000);
         }
 
         function clearAllData() {
@@ -514,7 +581,7 @@
         }
 
         function showTab(tabName) {
-            // Hide all tabs
+            // Скрываем все вкладки
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
@@ -522,7 +589,7 @@
                 tab.classList.remove('active');
             });
 
-            // Show selected tab
+            // Показываем выбранную вкладку
             document.getElementById(tabName + 'Tab').classList.add('active');
             event.target.classList.add('active');
         }
@@ -531,7 +598,9 @@
             const element = document.getElementById(elementId);
             element.textContent = message;
             element.style.display = 'block';
-            setTimeout(() => element.style.display = 'none', 5000);
+            setTimeout(() => {
+                element.style.display = 'none';
+            }, 5000);
         }
 
         async function handleFileUpload(event) {
@@ -541,36 +610,264 @@
             const loading = document.getElementById('loading');
             loading.style.display = 'block';
 
-            const formData = new FormData();
-            formData.append('file', file);
-
             try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+                const content = await readFileAsText(file);
+                const processedData = await processCSVContent(content, file.name);
 
-                const result = await response.json();
-
-                if (result.success) {
-                    currentData = result;
-                    currentMetadata = result.metadata;
-                    displayDataOverview(result);
-                    showMessage('successMessage', '✅ Файл успешно загружен и проанализирован!');
-                } else {
-                    showMessage('errorMessage', '❌ ' + result.error);
-                }
+                currentData = processedData;
+                displayDataOverview(processedData);
+                showMessage('successMessage', '✅ Файл успешно загружен и проанализирован!');
             } catch (error) {
-                showMessage('errorMessage', '❌ Ошибка сети: ' + error.message);
+                showMessage('errorMessage', '❌ Ошибка обработки файла: ' + error.message);
             } finally {
                 loading.style.display = 'none';
             }
         }
 
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.onerror = e => reject(new Error('Ошибка чтения файла'));
+                reader.readAsText(file, 'UTF-8');
+            });
+        }
+
+        function processCSVContent(content, filename) {
+            return new Promise((resolve) => {
+                Papa.parse(content, {
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        const data = results.data.filter(row => {
+                            // Фильтруем пустые строки
+                            return Object.values(row).some(value => value !== null && value !== '');
+                        });
+
+                        if (data.length === 0) {
+                            throw new Error('Файл не содержит данных');
+                        }
+
+                        // Определяем тип файла
+                        const fileType = detectFileType(data, filename, content);
+
+                        // Обрабатываем данные в зависимости от типа
+                        const processedData = preprocessData(data, fileType);
+
+                        // Вычисляем статистику
+                        const statistics = calculateStatistics(processedData);
+
+                        // Создаем превью
+                        const preview = processedData.slice(0, 10);
+
+                        resolve({
+                            columns: Object.keys(processedData[0] || {}),
+                            preview: preview,
+                            statistics: statistics,
+                            metadata: {
+                                file_type: fileType,
+                                description: getFileDescription(fileType),
+                                total_rows: processedData.length,
+                                total_columns: Object.keys(processedData[0] || {}).length
+                            },
+                            shape: {
+                                rows: processedData.length,
+                                cols: Object.keys(processedData[0] || {}).length
+                            },
+                            data_type: fileType,
+                            raw_data: processedData
+                        });
+                    },
+                    error: function(error) {
+                        throw new Error('Ошибка парсинга CSV: ' + error.message);
+                    }
+                });
+            });
+        }
+
+        function detectFileType(data, filename, content) {
+            const firstRow = data[0] || {};
+            const columns = Object.keys(firstRow);
+            const contentLower = content.toLowerCase();
+
+            // Проверяем Google Finance
+            if (contentLower.includes('google финанс') ||
+                (columns.includes('Date') && columns.includes('Open') && columns.includes('Close'))) {
+                return 'google_finance';
+            }
+
+            // Проверяем бюджетные данные
+            if (contentLower.includes('бюджет') || contentLower.includes('расход') ||
+                contentLower.includes('доход') || columns.some(col => col.toLowerCase().includes('₽'))) {
+                return 'budget';
+            }
+
+            // Проверяем данные о продажах
+            if (columns.some(col =>
+                ['sales', 'revenue', 'profit', 'продаж', 'выручка'].includes(col.toLowerCase()))) {
+                return 'sales';
+            }
+
+            return 'generic';
+        }
+
+        function preprocessData(data, fileType) {
+            if (fileType === 'google_finance') {
+                return data.map(row => {
+                    const processedRow = { ...row };
+
+                    // Обрабатываем даты
+                    if (processedRow.Date) {
+                        processedRow.Date = parseDate(processedRow.Date);
+                    }
+
+                    // Обрабатываем числа
+                    ['Open', 'High', 'Low', 'Close', 'Volume'].forEach(field => {
+                        if (processedRow[field] && typeof processedRow[field] === 'string') {
+                            processedRow[field] = parseNumber(processedRow[field]);
+                        }
+                    });
+
+                    return processedRow;
+                });
+            }
+
+            return data;
+        }
+
+        function parseDate(dateStr) {
+            if (typeof dateStr !== 'string') return dateStr;
+
+            // Перевод русских месяцев
+            const monthMap = {
+                'окт.': 'Oct', 'нояб.': 'Nov', 'дек.': 'Dec',
+                'янв.': 'Jan', 'февр.': 'Feb', 'мар.': 'Mar',
+                'апр.': 'Apr', 'мая': 'May', 'июн.': 'Jun',
+                'июл.': 'Jul', 'авг.': 'Aug', 'сент.': 'Sep'
+            };
+
+            let engDateStr = dateStr;
+            for (const [ru, en] of Object.entries(monthMap)) {
+                engDateStr = engDateStr.replace(ru, en);
+            }
+
+            // Пробуем распарсить дату
+            const date = new Date(engDateStr);
+            return isNaN(date.getTime()) ? dateStr : date.toISOString().split('T')[0];
+        }
+
+        function parseNumber(numStr) {
+            if (typeof numStr !== 'string') return numStr;
+
+            // Убираем пробелы и заменяем запятые на точки
+            const cleaned = numStr.replace(/\s/g, '').replace(',', '.');
+            const number = parseFloat(cleaned);
+
+            return isNaN(number) ? numStr : number;
+        }
+
+        function getFileDescription(fileType) {
+            const descriptions = {
+                'google_finance': 'Данные акций Google Finance',
+                'budget': 'Бюджетные данные',
+                'sales': 'Данные о продажах',
+                'generic': 'Общие данные'
+            };
+            return descriptions[fileType] || 'Неизвестный формат';
+        }
+
+        function calculateStatistics(data) {
+            if (!data || data.length === 0) return {};
+
+            const columns = Object.keys(data[0]);
+            const stats = {};
+
+            columns.forEach(column => {
+                const values = data.map(row => row[column]).filter(val =>
+                    val !== null && val !== undefined && val !== ''
+                );
+
+                if (values.length === 0) {
+                    stats[column] = { type: 'empty', count: 0 };
+                    return;
+                }
+
+                // Проверяем, числовые ли данные
+                const numericValues = values.filter(val => !isNaN(parseFloat(val)));
+
+                if (numericValues.length > 0 && numericValues.length === values.length) {
+                    // Все значения числовые
+                    const numbers = numericValues.map(Number);
+                    stats[column] = {
+                        type: 'numeric',
+                        mean: calculateMean(numbers),
+                        median: calculateMedian(numbers),
+                        std: calculateStandardDeviation(numbers),
+                        min: Math.min(...numbers),
+                        max: Math.max(...numbers),
+                        count: numbers.length
+                    };
+                } else if (values.every(val => !isNaN(Date.parse(val)))) {
+                    // Данные - даты
+                    const dates = values.map(val => new Date(val));
+                    stats[column] = {
+                        type: 'datetime',
+                        min_date: new Date(Math.min(...dates)).toISOString().split('T')[0],
+                        max_date: new Date(Math.max(...dates)).toISOString().split('T')[0],
+                        count: dates.length
+                    };
+                } else {
+                    // Категориальные данные
+                    stats[column] = {
+                        type: 'categorical',
+                        unique_count: new Set(values).size,
+                        most_common: findMode(values),
+                        count: values.length
+                    };
+                }
+            });
+
+            return stats;
+        }
+
+        // Вспомогательные функции для статистики
+        function calculateMean(numbers) {
+            return numbers.reduce((sum, val) => sum + val, 0) / numbers.length;
+        }
+
+        function calculateMedian(numbers) {
+            const sorted = [...numbers].sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+        }
+
+        function calculateStandardDeviation(numbers) {
+            const mean = calculateMean(numbers);
+            const squareDiffs = numbers.map(value => Math.pow(value - mean, 2));
+            return Math.sqrt(calculateMean(squareDiffs));
+        }
+
+        function findMode(values) {
+            const frequency = {};
+            let maxCount = 0;
+            let mode = null;
+
+            values.forEach(value => {
+                frequency[value] = (frequency[value] || 0) + 1;
+                if (frequency[value] > maxCount) {
+                    maxCount = frequency[value];
+                    mode = value;
+                }
+            });
+
+            return mode;
+        }
+
         function displayDataOverview(data) {
             document.getElementById('dataOverview').style.display = 'block';
 
-            // Display metadata
+            // Показываем метаданные
             const metadataCard = document.getElementById('metadataCard');
             metadataCard.innerHTML = `
                 <h3>📋 Информация о файле</h3>
@@ -582,12 +879,22 @@
                 </div>
             `;
 
-            // Display statistics
+            // Показываем статистику
+            displayStatistics(data.statistics);
+
+            // Показываем превью
+            displayPreview(data.columns, data.preview);
+
+            // Настраиваем графики
+            setupChartControls(data);
+        }
+
+        function displayStatistics(statistics) {
             const statsGrid = document.getElementById('statsGrid');
             statsGrid.innerHTML = '';
 
-            Object.keys(data.statistics).forEach(column => {
-                const stats = data.statistics[column];
+            Object.keys(statistics).forEach(column => {
+                const stats = statistics[column];
                 const statCard = document.createElement('div');
 
                 let statsHTML = '';
@@ -624,29 +931,39 @@
                             По: ${stats.max_date}
                         </div>
                     `;
+                } else {
+                    statCard.className = 'stat-card';
+                    statsHTML = `
+                        <h3>📦 ${column}</h3>
+                        <div class="value">${stats.count} записей</div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">
+                            Тип: Неизвестно
+                        </div>
+                    `;
                 }
 
                 statCard.innerHTML = statsHTML;
                 statsGrid.appendChild(statCard);
             });
+        }
 
-            // Display preview table
+        function displayPreview(columns, preview) {
             const previewTable = document.getElementById('previewTable');
             previewTable.innerHTML = '';
 
-            // Create header
+            // Создаем заголовок
             const headerRow = document.createElement('tr');
-            data.columns.forEach(column => {
+            columns.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = column;
                 headerRow.appendChild(th);
             });
             previewTable.appendChild(headerRow);
 
-            // Create data rows
-            data.preview.forEach(row => {
+            // Создаем строки данных
+            preview.forEach(row => {
                 const tr = document.createElement('tr');
-                data.columns.forEach(column => {
+                columns.forEach(column => {
                     const td = document.createElement('td');
                     const value = row[column];
                     td.textContent = value !== null && value !== undefined ?
@@ -655,12 +972,9 @@
                 });
                 previewTable.appendChild(tr);
             });
-
-            // Populate chart controls
-            populateChartControls(data);
         }
 
-        function populateChartControls(data) {
+        function setupChartControls(data) {
             const xAxis = document.getElementById('xAxis');
             const yAxis = document.getElementById('yAxis');
             const groupBy = document.getElementById('groupBy');
@@ -672,13 +986,13 @@
             data.columns.forEach(column => {
                 const stats = data.statistics[column];
 
-                // For X-axis: any column
+                // Для оси X: любая колонка
                 const optionX = document.createElement('option');
                 optionX.value = column;
                 optionX.textContent = column;
                 xAxis.appendChild(optionX);
 
-                // For Y-axis: only numeric columns
+                // Для оси Y: только числовые колонки
                 if (stats && stats.type === 'numeric') {
                     const optionY = document.createElement('option');
                     optionY.value = column;
@@ -686,7 +1000,7 @@
                     yAxis.appendChild(optionY);
                 }
 
-                // For grouping: categorical columns
+                // Для группировки: категориальные колонки
                 if (stats && (stats.type === 'categorical' || stats.type === 'datetime')) {
                     const optionGroup = document.createElement('option');
                     optionGroup.value = column;
@@ -695,18 +1009,20 @@
                 }
             });
 
-            // Auto-select sensible defaults
+            // Автовыбор разумных значений по умолчанию
             if (data.columns.includes('Date')) {
                 xAxis.value = 'Date';
             }
-            if (data.columns.includes('Close')) {
+            if (data.columns.includes('Close') && data.statistics['Close']?.type === 'numeric') {
                 yAxis.value = 'Close';
+            } else if (data.columns.includes('Sales') && data.statistics['Sales']?.type === 'numeric') {
+                yAxis.value = 'Sales';
+            } else if (data.columns.includes('Amount') && data.statistics['Amount']?.type === 'numeric') {
+                yAxis.value = 'Amount';
             }
 
-            // Generate initial chart if we have data
-            if (data.preview && data.preview.length > 0) {
-                setTimeout(generateChart, 100);
-            }
+            // Генерируем начальный график
+            setTimeout(generateChart, 100);
         }
 
         function generateChart() {
@@ -733,14 +1049,13 @@
         }
 
         function prepareChartData(chartType, xColumn, yColumn, groupBy) {
-            // Use actual data from preview for demonstration
-            const data = currentData.preview;
+            const data = currentData.raw_data || currentData.preview;
 
             let labels = [];
             let datasets = [];
 
             if (groupBy !== 'none' && currentData.statistics[groupBy]?.type === 'categorical') {
-                // Grouped data
+                // Группированные данные
                 const groups = {};
                 data.forEach(row => {
                     const groupValue = row[groupBy] || 'Other';
@@ -764,7 +1079,7 @@
                     datasets.push({
                         label: groupName,
                         data: values,
-                        backgroundColor: colors[colorIndex % colors.length] + '80',
+                        backgroundColor: getBackgroundColor(chartType, colorIndex),
                         borderColor: colors[colorIndex % colors.length],
                         borderWidth: 2
                     });
@@ -775,7 +1090,7 @@
                     }
                 });
             } else {
-                // Ungrouped data
+                // Негруппированные данные
                 const values = data.map(row => {
                     const xVal = row[xColumn];
                     const yVal = row[yColumn];
@@ -789,7 +1104,7 @@
                 datasets = [{
                     label: yColumn,
                     data: values,
-                    backgroundColor: getBackgroundColor(chartType),
+                    backgroundColor: getBackgroundColor(chartType, 0),
                     borderColor: '#6366f1',
                     borderWidth: 2
                 }];
@@ -801,13 +1116,16 @@
             };
         }
 
-        function getBackgroundColor(chartType) {
+        function getBackgroundColor(chartType, index) {
+            const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+
             switch(chartType) {
                 case 'line': return 'transparent';
-                case 'bar': return '#6366f1';
-                case 'pie': return ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-                case 'doughnut': return ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-                default: return '#6366f180';
+                case 'bar': return colors[index % colors.length] + '80';
+                case 'pie':
+                case 'doughnut':
+                    return colors;
+                default: return colors[index % colors.length] + '80';
             }
         }
 
@@ -817,7 +1135,10 @@
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
-                        labels: { color: '#fff', font: { size: 12 } }
+                        labels: {
+                            color: '#fff',
+                            font: { size: 12 }
+                        }
                     },
                     title: {
                         display: true,
@@ -832,8 +1153,12 @@
                         borderColor: '#6366f1',
                         borderWidth: 1
                     }
-                },
-                scales: chartType !== 'pie' && chartType !== 'doughnut' && chartType !== 'radar' ? {
+                }
+            };
+
+            // Добавляем оси для не-круговых графиков
+            if (chartType !== 'pie' && chartType !== 'doughnut' && chartType !== 'radar') {
+                baseOptions.scales = {
                     x: {
                         ticks: { color: '#b0b0b0' },
                         grid: { color: '#2a2a2a' },
@@ -852,8 +1177,8 @@
                             color: '#b0b0b0'
                         }
                     }
-                } : {}
-            };
+                };
+            }
 
             return baseOptions;
         }
